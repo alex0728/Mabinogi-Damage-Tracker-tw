@@ -118,7 +118,7 @@ From Dev to CM to GM to Accountant and Office intern. We appreciate all of the w
 
 ## 台服專用版本 (TW Server Edition)
 
-本分支版本由社群開發，專為台服玩家設計。**此版本僅在台服 (TW Server) 測試過。**
+本分支版本由社群開發，專為台服玩家設計。**此版本僅在台服 (TW Server) 進行測試。**
 
 ### 新增功能
 
@@ -142,7 +142,6 @@ From Dev to CM to GM to Accountant and Office intern. We appreciate all of the w
 **其他改進**
 - 修復多人戰鬥時的 View 頁面崩潰問題
 - 修復空資料時的錯誤處理
-- 移除了 debug log 訊息
 
 ### 安裝說明
 
