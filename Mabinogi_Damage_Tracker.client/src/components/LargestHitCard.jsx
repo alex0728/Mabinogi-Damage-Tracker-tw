@@ -1,0 +1,54 @@
+import { useState, useEffect } from 'react';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography'
+import StarIcon from '@mui/icons-material/Star';
+import DotsMobileStepper from './DotsMobileStepper';
+import { useTranslation } from 'react-i18next';
+
+function formatLargeNumber(num) {
+    if (num === null || num === undefined || isNaN(num)) return '0';
+
+    const absNum = Math.abs(num);
+    let formatted;
+
+    if (absNum >= 1e12) {
+        formatted = (num / 1e12).toFixed(1) + 'T';
+    } else if (absNum >= 1e9) {
+        formatted = (num / 1e9).toFixed(1) + 'B';
+    } else if (absNum >= 1e6) {
+        formatted = (num / 1e6).toFixed(1) + 'M';
+    } else if (absNum >= 1e3) {
+        formatted = (num / 1e3).toFixed(1) + 'K';
+    } else {
+        formatted = num.toFixed(0);
+    }
+
+    return formatted.replace(/\.0(?=[A-Z])/, '');
+}
+
+export default function LargestHitCard({ largestDamageInstances, setGraphLargestDamageInstance }) {
+    const { t } = useTranslation();
+    const [currentlargestDamageInstance, setCurrentlargestDamageInstance] = useState(largestDamageInstances[0]);
+    const [activeStep, setActiveStep] = useState(0);
+
+    useEffect(() => {
+        setCurrentlargestDamageInstance(largestDamageInstances[activeStep]);
+        setGraphLargestDamageInstance(largestDamageInstances[activeStep]);
+    }, [activeStep, largestDamageInstances, setGraphLargestDamageInstance])
+
+    return (
+        <Paper square={false} sx={{ position: 'relative', "padding-left": "32px", "padding-top": "20px", gap: "10px", height: "100%", display: 'flex', flexDirection: 'column' }}>
+            <StarIcon fontSize="medium" sx={{ marginBottom: "8%" }} />
+            <Box sx={{ display: "flex", flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 2, sm: 4, md: 8 }}}>
+                <Box sx={{ gap: "10px", flexGrow: "2" }}>
+                    <Typography variant="subtitle1">{t('analytics.largestHitBy', { player: currentlargestDamageInstance.player_name })}</Typography>
+                    <Typography variant="h3">{formatLargeNumber(currentlargestDamageInstance.damage)}</Typography>
+                </Box>
+            </Box>
+            <Box sx={{ position: 'absolute', bottom: 25, left: '50%', transform: "translate(-50%, 50%)" }} >
+                <DotsMobileStepper steps={largestDamageInstances.length} activeStep={activeStep} setActiveStep={setActiveStep} />
+            </Box>
+        </Paper>
+    );
+}

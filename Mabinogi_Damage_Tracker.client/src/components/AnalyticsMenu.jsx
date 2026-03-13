@@ -1,0 +1,326 @@
+import { useState, useEffect, useContext, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { AppContext } from '../AppContext'
+import Grid from '@mui/material/Grid';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Skeleton from '@mui/material/Skeleton';
+import Divider from '@mui/material/Divider';
+import DamageCard from './DamageCard';
+import PlayerCountCard from './PlayerCountCard';
+import TimeCard from './TimeCard';
+import TrimLineGraph from './TrimLineGraph';
+import PlayerDamagePieChart from './PlayerDamagePieChart';
+import DecoratedDamageOverTimeLineGraph from './DecoratedDamageOverTimeLineGraph';
+import DamageScatterPlot from './DamageScatterPlot';
+import LargestHitCard from './LargestHitCard';
+import BurstCard from './BurstCard';
+import HealingCard from './HealingCard';
+import { getLocalizedSkillName } from '../i18n/skills';
+
+function formatTimeStamp(ut) {
+    return new Date((ut) * 1000).toLocaleTimeString(
+        [],
+        { hour: 'numeric', minute: '2-digit', second: '2-digit' }
+    );
+}
+
+function transformDataPieDamage(apiData, language) {
+    return apiData.map(item => ({
+        skillId: item.skill_id ?? item.skillId ?? item.id,
+        label: getLocalizedSkillName(item.skill_id ?? item.skillId ?? item.id, item.label, language),
+        value: item.data.at(-1)
+    }));
+}
+
+function transformDataLineChartDamage(apiData, language) {
+    return apiData.map(item => ({
+        type: "line",
+        id: item.id,
+        skillId: item.skill_id ?? item.skillId ?? item.id,
+        label: getLocalizedSkillName(item.skill_id ?? item.skillId ?? item.id, item.label, language),
+        data: item.data,
+        area: false,
+        showMark: false,
+    }));
+}
+
+export default function AnalyticsMenu({ start_ut, end_ut }) {
+    const { t, i18n } = useTranslation();
+    const { burstCount, largestDamageInstanceCount } = useContext(AppContext)
+    const [damageOverTimeData, setDamageOverTimeData] = useState([])
+    const [damagePieChartData, setDamagePieChartData] = useState([])
+    const [combinedDamageOverTimeData, setCombinedDamageOverTimeData] = useState([])
+    const [totalDamage, setTotalDamage] = useState(0)
+    const [totalHealing, setTotalHealing] = useState(0)
+    const [numberOfPlayer, setNumberOfPlayers] = useState(0)
+    const [largestDamageInstances, setLargestDamageInstances] = useState([])
+    const [graphLargestDamageInstance, setGraphLargestDamageInstance] = useState(null)
+    const [bands, setBands] = useState([])
+    const [graphBands, setGraphBands] = useState([])
+    // Scatter Plot
+    const [scatterPlotSeries, setScatterPlotSeries] = useState([]);
+    
+    // Prevent infinite loop
+    const isMounted = useRef(true);
+
+
+    useEffect(() => {
+        isMounted.current = true;
+        const currentLanguage = i18n.language;
+        
+        // GetDamangeBands()
+        async function getDamageBands() {
+            const newBands = []
+            const newGraphBands = []
+            await fetch(`http://${window.location.hostname}:5004/Home/GetListOfDistinctBiggestBurstofDamageInUTBetweenTimes?start_ut=${start_ut}&end_ut=${end_ut}&burst_timeframe=${60}&count=${burstCount}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || !Array.isArray(data) || data.length === 0) return;
+                    const bands = data.map((res) => {
+                        const band = {
+                            label: '60s',
+                            start: formatTimeStamp(res.unix_timestamp),
+                            end: formatTimeStamp(res.unix_timestamp + 60),
+                            ...res,
+                        }
+                        return band
+                    })
+                    if (bands.length > 0) {
+                        newGraphBands.push(bands[0])
+                        newBands.push(bands)
+                    }
+                })
+
+            await fetch(`http://${window.location.hostname}:5004/Home/GetListOfDistinctBiggestBurstofDamageInUTBetweenTimes?start_ut=${start_ut}&end_ut=${end_ut}&burst_timeframe=${30}&count=${burstCount}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || !Array.isArray(data) || data.length === 0) return;
+                    const bands = data.map((res) => {
+                        const band = {
+                            label: '30s',
+                            start: formatTimeStamp(res.unix_timestamp),
+                            end: formatTimeStamp(res.unix_timestamp + 60),
+                            ...res,
+                        }
+                        return band
+                    })
+                    if (bands.length > 0) {
+                        newGraphBands.push(bands[0])
+                        newBands.push(bands)
+                    }
+                })
+
+            await fetch(`http://${window.location.hostname}:5004/Home/GetListOfDistinctBiggestBurstofDamageInUTBetweenTimes?start_ut=${start_ut}&end_ut=${end_ut}&burst_timeframe=${15}&count=${burstCount}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || !Array.isArray(data) || data.length === 0) return;
+                    const bands = data.map((res) => {
+                        const band = {
+                            label: '15s',
+                            start: formatTimeStamp(res.unix_timestamp),
+                            end: formatTimeStamp(res.unix_timestamp + 60),
+                            ...res,
+                        }
+                        return band
+                    })
+                    if (bands.length > 0) {
+                        newGraphBands.push(bands[0])
+                        newBands.push(bands)
+                    }
+                })
+            // Only set state if we have actual data
+            if (newBands.length > 0) {
+                setGraphBands(newGraphBands)
+                setBands(newBands)
+            }
+        }
+        // End of GetDamangeBands()
+
+
+        fetch(`http://${window.location.hostname}:5004/Home/GetAggregatedDamageSeriesGroupedByPlayers?start_ut=${start_ut}&end_ut=${end_ut}`)
+            .then(response => response.json())
+            .then(data => {
+                if (!data || !Array.isArray(data) || data.length === 0) {
+                    setDamageOverTimeData([]);
+                    setCombinedDamageOverTimeData([]);
+                    setDamagePieChartData([]);
+                    setTotalDamage(0);
+                    setNumberOfPlayers(0);
+                    return;
+                }
+                const sortedData = data.sort((a, b) => {
+                    const damageA = a.data?.at(-1) || 0
+                    const damageB = b.data?.at(-1) || 0
+
+                    if (damageA > damageB) {
+                        return -1;
+                    } else if (damageA < damageB) {
+                        return 1;
+                    } else {
+                        return 0;
+                    }
+                });
+
+                const newLineChartData = transformDataLineChartDamage(sortedData, currentLanguage)
+                setDamageOverTimeData(newLineChartData);
+
+                const newCombinedDamageOverTimeData = newLineChartData[0]?.data?.map((_, index) =>
+                    newLineChartData.reduce((sum, series) => sum + (series.data?.[index] ?? 0), 0)
+                ) ?? [];
+
+                setCombinedDamageOverTimeData(newCombinedDamageOverTimeData)
+
+                const newPieChartData = transformDataPieDamage(sortedData, currentLanguage)
+                setDamagePieChartData(newPieChartData);
+
+                const newTotalDamage = newCombinedDamageOverTimeData.at(-1);
+                setTotalDamage(newTotalDamage)
+
+                const newNumberOfPlayers = newLineChartData.length
+                setNumberOfPlayers(newNumberOfPlayers)
+            })
+            .catch(error => console.error('Error:', error));
+
+        fetch(`http://${window.location.hostname}:5004/Home/GetListOfDistinctLargestSingleDamageInstance?start_ut=${start_ut}&end_ut=${end_ut}&count=${largestDamageInstanceCount}`)
+            .then(response => response.json())
+            .then(data => {
+                if (!data || !Array.isArray(data)) return;
+                setLargestDamageInstances(data)
+                setGraphLargestDamageInstance(data[0] || null)
+            })
+
+        fetch(`http://${window.location.hostname}:5004/Home/GetTotalPlayerHealing?start_ut=${start_ut}&end_ut=${end_ut}`)
+            .then(response => response.json())
+            .then(data => {
+                setTotalHealing(data || 0)
+            })
+
+
+        fetch(`http://${window.location.hostname}:5004/Home/GetDamagesBetweenUt?start_ut=${start_ut}&end_ut=${end_ut}`)
+            .then(response => response.json())
+            .then(data => {
+                if (!data || !Array.isArray(data) || data.length === 0) return;
+                const dmgMap = new Map();
+
+                const series = data.reduce((series, damage_simple) => {
+                    const playerLabel = damage_simple.player_name || String(damage_simple.player_id || '');
+                    let entry = series.find((element) => element.label === playerLabel);
+
+                    if (!entry) {
+                        entry = {
+                            label: playerLabel,
+                            highlightScope: { highlight: 'series', fade: 'global' },
+                            markerSize: 2,
+                            data: [],
+                        }
+                        dmgMap.set(playerLabel, 0)
+                        series.push(entry)
+                    }
+
+                    entry.data.push({
+                        x: damage_simple.unix_timestamp,
+                        y: damage_simple.damage,
+                        id: entry.data.length
+                    });
+
+                    dmgMap.set(playerLabel, dmgMap.get(playerLabel) + damage_simple.damage);
+
+                    return series
+                }, []);
+
+                series.sort((a, b) => dmgMap.get(b.label) - dmgMap.get(a.label))
+
+                setScatterPlotSeries(series)
+            })
+        
+        getDamageBands()
+
+        return () => {
+            isMounted.current = false;
+        };
+    }, [start_ut, end_ut]);
+    
+    return (
+        <Box>
+            <Typography variant="h2" sx={{ marginBottom: "8px"}}>{t('analytics.title')}</Typography>
+            <Grid container spacing={{ xs: 1, md: 2 }} alignItems="stretch" sx={{ flexGrow: 1 }}>
+                { /* Total Damage Card */}
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }} >
+                    {combinedDamageOverTimeData ?
+                        <DamageCard chartData={combinedDamageOverTimeData} totalDamage={totalDamage} />
+                        :
+                        <Skeleton variant="rounded" />
+                    }
+                </Grid>
+                { /* Number of Players Card */}
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }} >
+                    {numberOfPlayer ?
+                        <PlayerCountCard count={numberOfPlayer} />
+                        :
+                        <Skeleton variant="rounded" />
+                    }
+                </Grid> 
+                { /* Time Card */}
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }} >
+                    <TimeCard length_ut={end_ut - start_ut} />
+                </Grid>
+                { /* Total Healing Card */}
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }} >
+                    {combinedDamageOverTimeData ?
+                        <HealingCard totalHealing={totalHealing} />
+                        :
+                        <Skeleton variant="rounded" />
+                    }
+                </Grid>
+                { /* Largest Damage Instance Card */}
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }} sx={{ height: '250px', paddingBottom: '14px' }}>
+                    {largestDamageInstances.length ?
+                        <LargestHitCard largestDamageInstances={largestDamageInstances} setGraphLargestDamageInstance={setGraphLargestDamageInstance} />
+                        :
+                        <Skeleton variant="rounded" />
+                    }
+                </Grid>
+                { /* Largets Burst Cards */ }
+                {bands.length ? 
+                    bands.map((band, index) =>
+                        <Grid key={`band_${index}`} size={{ xs: 12, sm: 6, lg: 3 }} sx={{ height: '250px', paddingBottom: '14px' }}>
+                            <BurstCard bands={band} graphBands={graphBands} setGraphBands={setGraphBands} />
+                        </Grid>
+                    )
+                    : Array.from(2).map((_) => <Skeleton variant="rounded" />)
+                }
+
+                { /* Player Damange Pie Chart */}
+                <Grid size={{ xs: 12, sm: 12, lg: 8, xl: 4 }} >
+                    <PlayerDamagePieChart chartData={damagePieChartData} />
+                </Grid>
+                { /* Player Damage Line Chart */}
+                <Grid size={{ xs: 12, sm: 12, lg: 12, xl: 8 }} >
+                    {(damageOverTimeData && graphLargestDamageInstance && graphBands.length) ?
+                        <DecoratedDamageOverTimeLineGraph chartData={damageOverTimeData} bands={graphBands} largestDamageInstance={graphLargestDamageInstance} start_ut={start_ut} />
+                        :
+                        <Skeleton variant="rounded" />
+                    }
+                </Grid>
+                { /* Player Damage Scatter Plot */}
+                <Grid size={{ xs: 12, sm: 12, lg: 12, xl: 12 }} >
+                    {(damageOverTimeData && graphLargestDamageInstance && graphBands.length) ?
+                        <DamageScatterPlot series={scatterPlotSeries}/>
+                        :
+                        <Skeleton variant="rounded" />
+                    }
+                </Grid>
+                { /* Trim Line Graph */}
+                <Grid size={12} > 
+                    {combinedDamageOverTimeData.length !== 0 ? (
+                        <TrimLineGraph chartData={combinedDamageOverTimeData} start_ut={start_ut} end_ut={end_ut} />
+                    ) : (
+                        <Skeleton variant="rounded"/>
+                        )
+                    }
+                </Grid>
+            </Grid>
+       </Box >
+  );
+}
